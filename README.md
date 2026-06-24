@@ -10,6 +10,28 @@
 
 ---
 
+## ⚠️ Security Warning / 安全警告
+
+> **Once you log into a website, the AI agent can do anything you can do in that browser.**
+> This includes — but is not limited to — reading emails, sending messages, making purchases, transferring money, changing passwords, deleting accounts, and accessing private data.
+>
+> **一但你登入網站，AI Agent 就能在瀏覽器裡做任何你能做的事。**
+> 包含但不限於：讀取郵件、發送訊息、購物下單、轉帳匯款、修改密碼、刪除帳號、存取私人資料。
+>
+> - ✅ **DO** let the agent browse public pages, search products, fill harmless forms
+> - ✅ **允許** agent 瀏覽公開頁面、搜尋商品、填寫無害表單
+> - ❌ **DO NOT** let the agent operate while logged into banking, email with sensitive data, or admin panels unless you are watching
+> - ❌ **不要** 在登入網銀、含敏感資料的信箱、或管理後台時讓 agent 自行操作（除非你全程盯著）
+> - 👀 **Always supervise** when the agent is working on authenticated sites
+> - 👀 **全程監督** agent 在已登入網站上的操作
+> - 🔒 **Close the debugging port** (or close Chrome) when you're done to prevent unauthorized access
+> - 🔒 用完**關閉除錯埠**（或關閉 Chrome），防止未授權存取
+>
+> **Use at your own risk. The author assumes no liability for any damages.**
+> **使用風險自負，作者不承擔任何損害賠償責任。**
+
+---
+
 ## How It Works / 運作原理
 
 ```
