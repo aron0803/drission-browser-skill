@@ -34,6 +34,13 @@ import sys
 import time
 from pathlib import Path
 
+# Force UTF-8 output — prevents UnicodeEncodeError on Windows CP950/CP1252
+import io
+if hasattr(sys.stdout, 'buffer'):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+if hasattr(sys.stderr, 'buffer'):
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
 HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
 SESSION_FILE = HERMES_HOME / "drission_session.json"
 
@@ -293,7 +300,11 @@ def cmd_click(sel):
     browser, _ = get_browser()
     tab = browser.latest_tab
     el = resolve_element(tab, sel)
-    el.click()
+    try:
+        el.click()
+    except Exception:
+        # Fallback: JS click for elements without screen position (NoRectError, etc.)
+        el.click(by_js=True)
     time.sleep(0.5)
     print(json.dumps({
         "ok": True,
@@ -342,7 +353,7 @@ def cmd_shot(args):
         el = resolve_element(tab, args[0])
         el.screenshot(out)
     else:
-        tab.screenshot(out)
+        tab.get_screenshot(path=out)
     print(json.dumps({
         "ok": True,
         "file": os.path.abspath(out),
@@ -351,8 +362,11 @@ def cmd_shot(args):
 def cmd_js(code):
     browser, _ = get_browser()
     tab = browser.latest_tab
-    # DrissionPage's run_js needs 'return' for values
-    if not code.strip().startswith("return "):
+    # DrissionPage's run_js wraps code in function(){...}.
+    # For single expressions, prepend 'return' to get the value back.
+    # For multi-statement code (contains ; or newlines), leave as-is.
+    stripped = code.strip()
+    if "\n" not in stripped and ";" not in stripped and not stripped.startswith("return "):
         code = "return " + code
     result = tab.run_js(code)
     print(json.dumps({
