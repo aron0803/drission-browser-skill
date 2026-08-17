@@ -73,11 +73,12 @@ Status legend: ✅ verified passing · ❌ verified failing · ⬜ not yet run.
 
 | # | Test | Env | Status |
 |---|---|---|---|
-| E1 | `from DrissionPage.keys import Keys` (the import `cmd_press` uses) raises `ModuleNotFoundError` on installed DrissionPage 4.1.1.4 | Static | ❌ **verified failing this session** — confirms `press`/`key` cannot work at all right now |
+| E1 | `from DrissionPage.keys import Keys` (the old import `cmd_press` used) raises `ModuleNotFoundError` on installed DrissionPage 4.1.1.4 | Static | ❌ verified failing against the pre-fix code — confirmed `press`/`key` could not work at all |
+| E1-fix | `scripts/drission.py:484` changed to `from DrissionPage.common import Keys` | Static | ✅ **fixed and verified this session** |
 | E2 | `from DrissionPage.common import Keys` (the fix) succeeds | Static | ✅ verified this session |
-| E3 | Once fixed: `press enter` sends Enter key to focused element | Desktop | ⬜ (blocked on E1 fix) |
-| E4 | Once fixed: `press ctrl+a` selects all text in focused field | Desktop | ⬜ (blocked on E1 fix) |
-| E5 | Once fixed: unrecognized key name is upper-cased and typed literally without crashing | Static | ⬜ |
+| E3 | `press enter` sends `Keys.ENTER` to the focused element | Static (stubbed tab) | ✅ verified this session via a mocked `tab.actions.type` — confirmed it receives the real `Keys.ENTER` codepoint (``); full Desktop verification against a real page still ⬜ |
+| E4 | `press ctrl+a` calls `key_down("CTRL").type("A").key_up("CTRL")` | Static (stubbed tab) | ✅ verified this session via mocked `tab.actions` |
+| E5 | Unrecognized key name is upper-cased and typed literally without crashing | Static (stubbed tab) | ✅ verified this session (`press x` → `type("X")`) |
 
 ## F. `js` command semantics (spec §7)
 
@@ -115,16 +116,18 @@ should be tracked as fix tickets, not silently left "not yet run":
 
 - **D-KF1** — `tab <bogus-id>` and **D-KF2** `wait` timeout both exit 0 on
   failure, breaking any caller that checks exit code instead of parsing
-  JSON `ok`.
-- **E1 (press)** — `ModuleNotFoundError` on every `press`/`key` call.
-  Confirmed via direct import test this session. Fix: change
-  `scripts/drission.py:484` to
-  `from DrissionPage.common import Keys`.
+  JSON `ok`. Still open.
+- ~~**E1 (press)** — `ModuleNotFoundError` on every `press`/`key` call.~~
+  **Fixed this session** — `scripts/drission.py:484` now imports
+  `from DrissionPage.common import Keys`. Verified via a mocked-tab unit
+  test (E3–E5); still needs a Desktop-env pass against a real page to
+  close out E3/E4 fully.
 
 ## Session-verified summary (this session, 2026-08-17)
 
 Verified with a live headless Chromium + reinstalled `DrissionPage==4.1.1.4`:
-A6, C4, C5, E1, E2, H1, H3. Everything under **Desktop** env requires a real
-user-driven Chrome window (manual login, visible UI) and could not be run in
-this sandboxed container — those rows stay ⬜ until exercised in the actual
-target environment (a user's machine with Hermes Agent).
+A6, C4, C5, E1, E1-fix, E2, E3, E4, E5, H1, H3. Everything under **Desktop**
+env requires a real user-driven Chrome window (manual login, visible UI) and
+could not be run in this sandboxed container — those rows stay ⬜ until
+exercised in the actual target environment (a user's machine with Hermes
+Agent).

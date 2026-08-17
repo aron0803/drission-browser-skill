@@ -158,13 +158,12 @@ Given a selector string:
 These are documented so the test checklist can mark them as **known-fail**
 rather than silently passing a broken implementation:
 
-1. **`press` is broken on all platforms.** `cmd_press` does
-   `from DrissionPage.keys import Keys`, but DrissionPage 4.x has no
-   `DrissionPage.keys` module (confirmed: `ModuleNotFoundError`). The
-   correct import, per SKILL.md's own documented pitfall #10, is
-   `from DrissionPage.common import Keys`. Every invocation of `press`/`key`
-   currently raises an uncaught `ModuleNotFoundError` traceback to stdout,
-   violating §2's "no uncaught traceback" requirement.
+1. ~~**`press` is broken on all platforms.**~~ **Fixed.** `cmd_press`
+   previously did `from DrissionPage.keys import Keys`, but DrissionPage 4.x
+   has no `DrissionPage.keys` module (confirmed: `ModuleNotFoundError`). It
+   now imports `from DrissionPage.common import Keys`, per SKILL.md's own
+   documented pitfall #10. Verified via a mocked-tab unit test — see
+   `spec/browser-cli.tests.md` E1/E1-fix/E2–E5.
 2. **`tab` and `wait` don't follow the exit-code contract.** Both print
    `{"ok": false, "error": ...}` on failure but exit 0, so a caller checking
    only the exit code will treat a failed lookup/timeout as success.

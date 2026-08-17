@@ -481,7 +481,7 @@ def cmd_refresh():
     print(json.dumps({"ok": True, "url": tab.url, "title": tab.title}, ensure_ascii=False))
 
 def cmd_press(key):
-    from DrissionPage.keys import Keys
+    from DrissionPage.common import Keys
     browser, _ = get_browser()
     tab = browser.latest_tab
     key_map = {
