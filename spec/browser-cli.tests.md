@@ -50,7 +50,7 @@ Status legend: ✅ verified passing · ❌ verified failing · ⬜ not yet run.
 |---|---|---|---|
 | D1 | `tabs` lists all open tabs with `id/index/url/title` | Desktop | ⬜ |
 | D2 | `tab <id>` switches active tab and returns its `url/title` | Desktop | ⬜ |
-| D3 | `tab <bogus-id>` → `{"ok": false, "error": ...}` — **note: exits 0, contradicts §2; test should assert current (buggy) behavior and flag it**, see Known-Fail D-KF1 | Desktop | ⬜ |
+| D3 | `tab <bogus-id>` → `{"ok": false, "error": ...}` + exit 1 | Static (stubbed browser) | ✅ **fixed and verified this session** — see D-KF1 |
 | D4 | `goto <url>` navigates and reports new `url/title` | Desktop | ⬜ |
 | D5 | `back` / `forward` / `refresh` change history state correctly, each with settle delay | Desktop | ⬜ |
 | D6 | `snap` (default) lists only interactive + heading elements, skips non-`is_displayed` ones | Desktop | ⬜ |
@@ -58,14 +58,14 @@ Status legend: ✅ verified passing · ❌ verified failing · ⬜ not yet run.
 | D8 | `text` with no selector returns `body` text truncated at 5000 chars | Desktop | ⬜ |
 | D9 | `text <sel>` returns the target element's text only | Desktop | ⬜ |
 | D10 | `html` / `html <sel>` truncate at 10000 chars | Desktop | ⬜ |
-| D11 | `shot` with no selector screenshots the full page to `drission_screenshot.png` in CWD | Desktop | ⬜ |
+| D11 | `shot` with no selector screenshots the full page to `drission_screenshot.png` next to `drission.py`, independent of CWD | Static (stubbed browser) | ✅ **fixed and verified this session** — confirmed path stays under `scripts/` even after `chdir("/tmp")` |
 | D12 | `shot <sel>` screenshots only the target element | Desktop | ⬜ |
 | D13 | `click <sel>` on a normal element succeeds via standard click | Desktop | ⬜ |
 | D14 | `click <sel>` on an off-screen/hidden element falls back to `click(by_js=True)` instead of raising `NoRectError` | Desktop | ⬜ |
 | D15 | `type <sel> <text>` clears the field before typing | Desktop | ⬜ |
 | D16 | `scroll <positive>` scrolls down; `scroll <negative>` scrolls up | Desktop | ⬜ |
 | D17 | `wait <sel>` returns found text within timeout | Desktop | ⬜ |
-| D18 | `wait <sel> <short-timeout>` on a missing element → `found: false` within ~timeout seconds — **exits 0, see Known-Fail D-KF2** | Desktop | ⬜ |
+| D18 | `wait <sel> <short-timeout>` on a missing element → `found: false` + exit 1 | Static (stubbed browser) | ✅ **fixed and verified this session** — see D-KF2 |
 | D19 | `cookies` returns all cookies for current page with correct `count` | Desktop | ⬜ |
 | D20 | `url` / `title` return current values with no side effects | Desktop | ⬜ |
 
@@ -114,9 +114,13 @@ Status legend: ✅ verified passing · ❌ verified failing · ⬜ not yet run.
 Carried from spec §10 — these are already confirmed broken/inconsistent and
 should be tracked as fix tickets, not silently left "not yet run":
 
-- **D-KF1** — `tab <bogus-id>` and **D-KF2** `wait` timeout both exit 0 on
-  failure, breaking any caller that checks exit code instead of parsing
-  JSON `ok`. Still open.
+- ~~**D-KF1** — `tab <bogus-id>` and **D-KF2** `wait` timeout both exit 0 on
+  failure~~ **Fixed this session** — both now call `sys.exit(1)` alongside
+  their `{"ok": false, ...}` JSON. Verified via unit tests with a stubbed
+  browser/tab (D3, D18).
+- ~~**D-KF3 — `shot` writes relative to CWD.**~~ **Fixed this session** —
+  output path now resolves relative to the script's own directory. Verified
+  via a `chdir("/tmp")` unit test (D11).
 - ~~**E1 (press)** — `ModuleNotFoundError` on every `press`/`key` call.~~
   **Fixed this session** — `scripts/drission.py:484` now imports
   `from DrissionPage.common import Keys`. Verified via a mocked-tab unit
@@ -125,9 +129,10 @@ should be tracked as fix tickets, not silently left "not yet run":
 
 ## Session-verified summary (this session, 2026-08-17)
 
-Verified with a live headless Chromium + reinstalled `DrissionPage==4.1.1.4`:
-A6, C4, C5, E1, E1-fix, E2, E3, E4, E5, H1, H3. Everything under **Desktop**
-env requires a real user-driven Chrome window (manual login, visible UI) and
-could not be run in this sandboxed container — those rows stay ⬜ until
-exercised in the actual target environment (a user's machine with Hermes
-Agent).
+Verified with a live headless Chromium + reinstalled `DrissionPage==4.1.1.4`,
+plus stubbed-browser unit tests for the exit-code and CWD fixes: A6, C4, C5,
+D3, D11, D18, E1, E1-fix, E2, E3, E4, E5, H1, H3. Everything under
+**Desktop** env requires a real user-driven Chrome window (manual login,
+visible UI) and could not be run in this sandboxed container — those rows
+stay ⬜ until exercised in the actual target environment (a user's machine
+with Hermes Agent).

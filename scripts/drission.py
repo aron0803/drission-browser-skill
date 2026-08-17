@@ -374,7 +374,7 @@ def cmd_html(args):
 def cmd_shot(args):
     browser, _ = get_browser()
     tab = browser.latest_tab
-    out = "drission_screenshot.png"
+    out = str(Path(__file__).resolve().parent / "drission_screenshot.png")
     if args:
         el = resolve_element(tab, args[0])
         el.screenshot(out)
@@ -417,6 +417,7 @@ def cmd_wait(sel, timeout=10):
             "found": False,
             "error": f"Element '{sel}' not found after {timeout}s",
         }, ensure_ascii=False))
+        sys.exit(1)
 
 def cmd_cookies():
     browser, _ = get_browser()
@@ -452,6 +453,7 @@ def cmd_tab(tab_id):
             }, ensure_ascii=False))
             return
     print(json.dumps({"ok": False, "error": f"Tab {tab_id} not found"}))
+    sys.exit(1)
 
 def cmd_scroll(px):
     browser, _ = get_browser()

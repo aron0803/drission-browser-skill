@@ -90,19 +90,19 @@ notable failure modes.
 | `connect` | — | `port, url, title, tabs` | Connects to existing browser on saved/default port. |
 | `launch` | — | `port, browser, url, title, hint` | See §4. |
 | `tabs` | — | `tabs: [{id, index, url, title}], count` | |
-| `tab` | `<tab_id>` | `tab_id, url, title` | `{"ok": false, "error": ...}` (no exit) if id not found — **inconsistent with §2**, see Known deviations. |
+| `tab` | `<tab_id>` | `tab_id, url, title` | `{"ok": false, "error": ...}` + `sys.exit(1)` if id not found. |
 | `goto` | `<url>` | `url, title` | |
 | `back` / `forward` / `refresh` | — | `url, title` | 0.5s settle delay after action. |
 | `url` / `title` | — | `url, title` resp. `title` | |
 | `snap` | `[--full]` | plain text block (not JSON) | Writes `ref_map`/`ref_url` to session as a side effect. Default selector: interactive elements only (`a, button, input, select, textarea, form, h1-h6, iframe, [onclick], [role=button\|link\|tab], summary, details`), filtered to `is_displayed`. `--full`: all elements under `body`, unfiltered. |
 | `text` | `[sel]` | plain text | No selector = `body` text, truncated to 5000 chars. |
 | `html` | `[sel]` | plain text | No selector = full page HTML, truncated to 10000 chars. |
-| `shot` | `[sel]` | `file` (absolute path) | Writes `drission_screenshot.png` to **current working directory**, not the skill directory. |
+| `shot` | `[sel]` | `file` (absolute path) | Writes `drission_screenshot.png` next to `drission.py` (i.e. `scripts/`), independent of the caller's CWD. |
 | `click` | `<sel>` | `action, selector, url, title` | Falls back to `click(by_js=True)` on any exception from the normal click. 0.5s settle delay. |
 | `type` / `input` | `<sel> <text...>` | `action, selector, text` (truncated 100 chars) | Clears field before typing. Remaining args joined with spaces as text. |
 | `press` / `key` | `<key>` | `key` | Maps common key names (see §6). |
 | `scroll` | `<px>` | `action, pixels` | Positive = down, negative = up. |
-| `wait` | `<sel> [timeout=10]` | `found, text` on success; `found: false, error` (no exit) on timeout | **Inconsistent with §2**: never sets non-zero exit even on "not found". |
+| `wait` | `<sel> [timeout=10]` | `found, text` on success; `found: false, error` + `sys.exit(1)` on timeout | |
 | `js` | `<code...>` | `result` (str, truncated 5000 chars) | See §7 for return-value semantics. |
 | `cookies` | — | `url, cookies, count` | |
 
@@ -164,10 +164,14 @@ rather than silently passing a broken implementation:
    now imports `from DrissionPage.common import Keys`, per SKILL.md's own
    documented pitfall #10. Verified via a mocked-tab unit test — see
    `spec/browser-cli.tests.md` E1/E1-fix/E2–E5.
-2. **`tab` and `wait` don't follow the exit-code contract.** Both print
-   `{"ok": false, "error": ...}` on failure but exit 0, so a caller checking
-   only the exit code will treat a failed lookup/timeout as success.
-3. **`shot` writes relative to CWD, not the skill directory** — if the
-   agent's terminal CWD differs between calls, screenshots can land in
-   unexpected places even though the reported `file` path is absolute at
-   write time.
+2. ~~**`tab` and `wait` don't follow the exit-code contract.**~~ **Fixed.**
+   Both now call `sys.exit(1)` alongside their `{"ok": false, ...}` JSON on
+   failure, so callers checking only the exit code get correct behavior.
+   Verified via unit tests with a stubbed browser/tab — see
+   `spec/browser-cli.tests.md` D-KF1.
+3. ~~**`shot` writes relative to CWD, not the skill directory**~~ **Fixed.**
+   `cmd_shot` now resolves its output path as
+   `Path(__file__).resolve().parent / "drission_screenshot.png"`, so the
+   screenshot always lands in `scripts/` regardless of the caller's CWD.
+   Verified by `chdir("/tmp")` before calling `cmd_shot` in a unit test —
+   see `spec/browser-cli.tests.md` D11.
