@@ -75,18 +75,44 @@ def get_browser(port=None):
         sys.exit(1)
 
 def find_chrome():
-    """Find Chrome/Edge executable on Windows."""
-    candidates = [
-        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
-        os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
-    ]
+    """Find Chrome/Edge executable across Windows, macOS, and Linux."""
+    import shutil
+
+    if sys.platform == "win32":
+        candidates = [
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+            os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
+        ]
+        fallback = "chrome.exe"
+    elif sys.platform == "darwin":
+        candidates = [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+            "/Applications/Chromium.app/Contents/MacOS/Chromium",
+            os.path.expanduser(
+                "~/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+            ),
+        ]
+        fallback = "google-chrome"
+    else:
+        candidates = []
+        fallback = "google-chrome"
+
     for p in candidates:
         if os.path.exists(p):
             return p
-    return "chrome.exe"  # fallback — hope it's on PATH
+
+    # Linux (and macOS/Windows fallback): search PATH for common binary names
+    for name in ("google-chrome", "google-chrome-stable", "chromium-browser",
+                 "chromium", "microsoft-edge", "microsoft-edge-stable"):
+        found = shutil.which(name)
+        if found:
+            return found
+
+    return fallback  # hope it's on PATH
 
 def _make_xpath(el):
     """Build a resilient XPath for an element using tag + key attributes."""
