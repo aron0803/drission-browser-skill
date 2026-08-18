@@ -127,6 +127,8 @@ All commands via: `python scripts/drission.py <command> [args]`
 | `connect` | Connect to running Chrome on port 9222 |
 | `tabs` | List all open tabs |
 | `tab <id>` | Switch to a specific tab |
+| `newtab [url]` | Open a new tab, optionally navigate it |
+| `closetab [id]` | Close a tab (default: current tab) |
 
 ### Navigation / 導航
 
@@ -153,9 +155,18 @@ All commands via: `python scripts/drission.py <command> [args]`
 |---------|-------------|
 | `click <sel>` | Click element (`[eN]` ref or CSS selector) |
 | `type <sel> <text>` | Clear and type into input |
+| `select <sel> <text\|idx>` | Choose a `<select>` option by text or index |
+| `upload <sel> <path>` | Set a file input to a local file path |
 | `press <key>` | Press key (enter, tab, escape, space, etc.) |
 | `scroll <px>` | Scroll by pixels (+down, -up) |
 | `wait <sel> [s]` | Wait for element (default 10s) |
+
+### Frames / 內嵌頁框
+
+| Command | Description |
+|---------|-------------|
+| `frame <sel\|idx>` | Enter an iframe — later commands operate inside it |
+| `frame main` | Leave the iframe, back to the top-level page |
 
 ### Advanced / 進階
 

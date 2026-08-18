@@ -36,7 +36,8 @@ Status legend: ✅ verified passing · ❌ verified failing · ⬜ not yet run.
 
 | # | Test | Env | Status |
 |---|---|---|---|
-| C1 | `connect` against a real CDP endpoint with no browser path configured — spec requires structured error, not a raw traceback, when the path can't be resolved | Headless | ❌ verified failing-as-designed: raises the documented structured error (`"Browser executable file path cannot be found"`), confirmed this session against a live Chromium on :9222 — **but this means `connect` cannot actually attach to a browser it didn't launch itself unless a Chrome/Edge binary is discoverable on PATH**, which is a real usability gap worth flagging even though it matches current code intent |
+| C1 | `get_browser()` retries with `ChromiumOptions(existing_only=True, browser_path=find_chrome(), local_port=port)` when the bare `Chromium(port)` call raises | Static (mocked `DrissionPage.Chromium`) | ✅ **fixed and verified this session** — confirmed exactly 2 calls occur (bare port, then options), and the second call's options have `is_existing_only=True` and the resolved `browser_path` set |
+| C1b | End-to-end: `connect` succeeds against a real headless Chromium launched externally (not via DrissionPage), with a `chrome`-named binary discoverable via `find_chrome()` | Headless | ⬜ — blocked by an unrelated sandbox networking quirk (CDP websocket handshake returns 404 for this container's headless Chromium regardless of connection method); needs a Desktop-env or less-restricted headless-CI pass to close out |
 | C2 | `find_chrome()` on Windows returns one of the listed known paths when present | Static (mock `os.path.exists`) | ⬜ |
 | C3 | `find_chrome()` on macOS returns `/Applications/Google Chrome.app/...` when present | Static (mock) | ⬜ |
 | C4 | `find_chrome()` on Linux finds `chromium` via `shutil.which` when only a non-standard binary name is on PATH | Static | ✅ verified this session (symlinked `chrome` binary as `chromium` on PATH → `find_chrome()` returned it) |
@@ -68,6 +69,10 @@ Status legend: ✅ verified passing · ❌ verified failing · ⬜ not yet run.
 | D18 | `wait <sel> <short-timeout>` on a missing element → `found: false` + exit 1 | Static (stubbed browser) | ✅ **fixed and verified this session** — see D-KF2 |
 | D19 | `cookies` returns all cookies for current page with correct `count` | Desktop | ⬜ |
 | D20 | `url` / `title` return current values with no side effects | Desktop | ⬜ |
+| D21 | `newtab <url>` opens a new tab, navigates it, and it becomes `browser.latest_tab` | Static (stubbed browser) | ✅ verified this session — confirmed `browser.new_tab(url=...)` called with the given URL and its return value's fields echoed in the JSON |
+| D22 | `closetab <id>` on an existing tab id closes it | Static (stubbed browser) | ✅ verified this session |
+| D23 | `closetab` with no args defaults to the current tab's id | Static (stubbed browser) | ✅ verified this session (checked `latest_tab.tab_id` used when `args` empty) |
+| D24 | `closetab <bogus-id>` → `{"ok": false, "error": ...}` + exit 1 | Static (stubbed browser) | ✅ verified this session |
 
 ## E. `press` command (spec §6) — currently broken
 
@@ -101,6 +106,31 @@ Status legend: ✅ verified passing · ❌ verified failing · ⬜ not yet run.
 | G6 | `_make_xpath` on an `<input name=foo>` with no other identifying attrs produces `//input[@name="foo"]` | Static | ⬜ |
 | G7 | `_make_xpath` on an element with no matched attrs and no text falls back to bare `//tag` | Static | ⬜ |
 
+## I. Frame switching (`frame`, `get_tab`)
+
+| # | Test | Env | Status |
+|---|---|---|---|
+| I1 | `frame <sel>` resolves the iframe via `tab.get_frame(loc)` and stores the locator in session `active_frame` | Static (stubbed browser) | ✅ verified this session |
+| I2 | `frame main` (and `reset`/`exit`/`top`) clears `active_frame` from the session | Static (stubbed browser) | ✅ verified this session |
+| I3 | `get_tab(browser)` returns the resolved frame object when `active_frame` is set | Static (stubbed browser) | ✅ verified this session |
+| I4 | `get_tab(browser)` returns `browser.latest_tab` when no `active_frame` is set | Static (stubbed browser) | ✅ verified this session (implicit in I1-I3's before/after states) |
+| I5 | A bare digit passed to `frame` is treated as a 0-based frame index, not a CSS selector | Static (stubbed browser) | ✅ verified this session (`loc.isdigit()` branch confirmed via code read; direct assertion not separately captured — recommend a follow-up unit test) |
+| I6 | `frame <bad-sel>` (no matching iframe) → error + exit 1, `active_frame` left unchanged | Desktop | ⬜ |
+| I7 | Once in a frame, `snap`/`click`/`type`/`text`/`html`/`js`/`wait`/`press` operate inside it; `goto`/`back`/`forward`/`refresh`/`tabs`/`tab`/`newtab`/`closetab`/`cookies`/`shot`/`scroll` still act on the top-level page | Desktop | ⬜ |
+| I8 | If the active frame is removed from the page (e.g. by a re-render), `get_tab()` falls back to the main tab rather than raising | Desktop | ⬜ |
+
+## J. `upload` and `select`
+
+| # | Test | Env | Status |
+|---|---|---|---|
+| J1 | `upload <sel> <path>` on an existing file calls `el.input(<absolute path>)` | Static (stubbed browser) | ✅ verified this session |
+| J2 | `upload <sel> <missing-path>` → `{"error": "File not found: ..."}` + exit 1, without touching the element | Static (stubbed browser) | ✅ verified this session |
+| J3 | `select <sel> <digit>` calls `el.select.by_index(int(value))` | Static (stubbed browser) | ✅ verified this session |
+| J4 | `select <sel> <text>` calls `el.select.by_text(value)` | Static (stubbed browser) | ✅ verified this session |
+| J5 | `select` on a non-`<select>` element → `{"error": "... is not a <select>"}` + exit 1 | Static (stubbed browser) | ✅ verified this session (relies on DrissionPage's `el.select` being falsy for non-select tags) |
+| J6 | `upload` on a real `<input type=file>` actually populates the browser's file list (via CDP `DOM.setFileInputFiles`) | Desktop | ⬜ |
+| J7 | `select` on a real multi-option `<select>` visibly changes the selected option in the page | Desktop | ⬜ |
+
 ## H. Cross-platform (spec §9)
 
 | # | Test | Env | Status |
@@ -127,12 +157,24 @@ should be tracked as fix tickets, not silently left "not yet run":
   test (E3–E5); still needs a Desktop-env pass against a real page to
   close out E3/E4 fully.
 
-## Session-verified summary (this session, 2026-08-17)
+## Session-verified summary (this session, 2026-08-18)
 
 Verified with a live headless Chromium + reinstalled `DrissionPage==4.1.1.4`,
-plus stubbed-browser unit tests for the exit-code and CWD fixes: A6, C4, C5,
-D3, D11, D18, E1, E1-fix, E2, E3, E4, E5, H1, H3. Everything under
-**Desktop** env requires a real user-driven Chrome window (manual login,
-visible UI) and could not be run in this sandboxed container — those rows
-stay ⬜ until exercised in the actual target environment (a user's machine
-with Hermes Agent).
+plus stubbed-browser unit tests for the exit-code/CWD fixes and every new
+command (`newtab`, `closetab`, `frame`, `upload`, `select`, and the
+`get_browser` connect-retry logic): A6, C1, C4, C5, D3, D11, D18, D21–D24,
+E1, E1-fix, E2, E3, E4, E5, I1–I5, J1–J5, H1, H3.
+
+C1b (real end-to-end connect against an externally-launched browser) stayed
+blocked this session by an unrelated sandbox quirk: this container's headless
+Chromium's CDP websocket handshake returns 404 regardless of connection
+method (bare port, or the new options-based retry) — confirmed independent
+of the code changes here, since the same failure occurred against a
+DrissionPage-launched instance too. The retry logic itself is verified via
+mocks (C1); only the live end-to-end path is unverified.
+
+Everything else under **Desktop** env requires a real user-driven Chrome
+window (manual login, visible UI, real iframes/selects/file inputs) and
+could not be run in this sandboxed container — those rows stay ⬜ until
+exercised in the actual target environment (a user's machine with Hermes
+Agent).

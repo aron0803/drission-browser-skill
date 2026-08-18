@@ -46,6 +46,8 @@ launch                    Start Chrome with remote debugging enabled (port 9222)
 connect                   Connect to an already-running Chrome on port 9222
 tabs                      List all open tabs
 tab <tab_id>              Switch to a specific tab
+newtab [url]              Open a new tab (optionally navigate it), becomes active
+closetab [tab_id]         Close a tab (default: the current tab)
 ```
 
 ### Navigation
@@ -70,9 +72,18 @@ shot [selector]           Screenshot page or element → drission_screenshot.png
 ```
 click <sel>               Click an element ([eN] ref or CSS selector)
 type <sel> <text>         Clear and type into an input field
+select <sel> <text|idx>   Choose a <select> option by visible text or 0-based index
+upload <sel> <path>       Set a file <input> to a local file path
 press <key>               Press a keyboard key (enter, tab, escape, space, etc.)
 scroll <px>               Scroll by N pixels (positive=down, negative=up)
 wait <sel> [seconds]      Wait for element to appear (default 10s)
+```
+
+### Frames
+```
+frame <sel|idx>           Enter an iframe — subsequent snap/click/type/text/html/js/wait/press
+                           operate inside it until you leave
+frame main                Leave the iframe, back to the top-level page
 ```
 
 ### Advanced
@@ -186,6 +197,8 @@ Use [eN] refs or CSS selectors with: click [eN], type [eN] "text"
 11. **Multi-statement JS returns None** — `run_js` wraps code in `function(){return <code>}`. Multi-statement code (containing `;` or newlines) needs an explicit `return` statement at the end to get a value back.
 
 12. **Amazon price traps** — When `snap` or `extract_detail` returns the wrong price: (a) check if buybox says "無法配送" → Amazon is showing a different item's price; extract the real price from page-source variant JSON instead. (b) All `.a-price` blocks may be `visible=False` on variant-heavy pages — check visibility before trusting a price. (c) Some prices render as bare text outside `.a-offscreen` → regex-fallback on buybox text.
+
+13. **`frame` state persists across calls, like `[eN]` refs** — once you run `frame <sel>`, every following `snap`/`click`/`type`/`text`/`html`/`js`/`wait`/`press` operates inside that iframe until you run `frame main`. Forgetting to leave the frame is a common cause of "element not found" on the parent page afterward. `goto`/`back`/`forward`/`refresh`/`tabs`/`tab`/`newtab`/`closetab`/`cookies`/`shot`/`scroll` always act on the top-level page regardless of the active frame.
 
 ## Verification Checklist
 

@@ -19,6 +19,12 @@ Usage:
   python drission.py cookies              # get cookies
   python drission.py tabs                 # list tabs
   python drission.py tab <id>             # switch tab
+  python drission.py newtab [url]         # open a new tab (optionally navigate it)
+  python drission.py closetab [id]        # close a tab (default: current tab)
+  python drission.py frame <sel|idx>      # enter an iframe for subsequent commands
+  python drission.py frame main           # leave the iframe, back to the main page
+  python drission.py upload <sel> <path>  # set a file input's value
+  python drission.py select <sel> <text|idx> # choose a <select> option
   python drission.py scroll <px>          # scroll (positive=down, negative=up)
   python drission.py back                 # go back
   python drission.py forward              # go forward
@@ -57,22 +63,47 @@ def save_session(data):
 
 def get_browser(port=None):
     """Connect to an existing Chrome via CDP, using saved or provided port."""
-    from DrissionPage import Chromium
+    from DrissionPage import Chromium, ChromiumOptions
     session = load_session()
     port = port or session.get("debug_port", 9222)
     try:
         browser = Chromium(port)
-        save_session({"debug_port": port})  # refresh session
-        return browser, port
-    except Exception as e:
-        print(json.dumps({
-            "error": f"Cannot connect to Chrome on port {port}",
-            "detail": str(e),
-            "hint": "Make sure Chrome is running with --remote-debugging-port=9222. "
-                    "Use 'python drission.py launch' to start it automatically, "
-                    "or run: chrome.exe --remote-debugging-port=9222"
-        }))
-        sys.exit(1)
+    except Exception as first_err:
+        # Bare Chromium(port) fails when DrissionPage can't resolve a local
+        # browser executable path — even though the CDP endpoint itself is
+        # reachable — which happens for browsers not launched by
+        # DrissionPage itself. Retry with an explicit browser_path and
+        # existing_only() (connect-only, never launch a new instance).
+        try:
+            co = ChromiumOptions()
+            co.set_local_port(port)
+            co.set_browser_path(find_chrome())
+            co.existing_only()
+            browser = Chromium(co)
+        except Exception:
+            print(json.dumps({
+                "error": f"Cannot connect to Chrome on port {port}",
+                "detail": str(first_err),
+                "hint": "Make sure Chrome is running with --remote-debugging-port=9222. "
+                        "Use 'python drission.py launch' to start it automatically, "
+                        "or run: chrome.exe --remote-debugging-port=9222"
+            }))
+            sys.exit(1)
+    save_session({"debug_port": port})  # refresh session
+    return browser, port
+
+def get_tab(browser):
+    """Return the tab to operate on: the active frame if one was set via
+    'frame <sel>', otherwise the browser's latest (main) tab."""
+    session = load_session()
+    frame_loc = session.get("active_frame")
+    tab = browser.latest_tab
+    if frame_loc is not None:
+        try:
+            return tab.get_frame(frame_loc)
+        except Exception:
+            pass  # frame no longer exists — fall back to the main page
+    return tab
 
 def find_chrome():
     """Find Chrome/Edge executable across Windows, macOS, and Linux."""
@@ -319,12 +350,12 @@ def cmd_goto(url):
 def cmd_snap(args):
     full = "--full" in args
     browser, _ = get_browser()
-    tab = browser.latest_tab
+    tab = get_tab(browser)
     print(snapshot_elements(tab, full=full))
 
 def cmd_click(sel):
     browser, _ = get_browser()
-    tab = browser.latest_tab
+    tab = get_tab(browser)
     el = resolve_element(tab, sel)
     try:
         el.click()
@@ -342,7 +373,7 @@ def cmd_click(sel):
 
 def cmd_type(sel, text):
     browser, _ = get_browser()
-    tab = browser.latest_tab
+    tab = get_tab(browser)
     el = resolve_element(tab, sel)
     el.clear()
     el.input(text)
@@ -355,7 +386,7 @@ def cmd_type(sel, text):
 
 def cmd_text(args):
     browser, _ = get_browser()
-    tab = browser.latest_tab
+    tab = get_tab(browser)
     if args:
         el = resolve_element(tab, args[0])
         print(el.text)
@@ -364,7 +395,7 @@ def cmd_text(args):
 
 def cmd_html(args):
     browser, _ = get_browser()
-    tab = browser.latest_tab
+    tab = get_tab(browser)
     if args:
         el = resolve_element(tab, args[0])
         print(el.html[:10000])
@@ -387,7 +418,7 @@ def cmd_shot(args):
 
 def cmd_js(code):
     browser, _ = get_browser()
-    tab = browser.latest_tab
+    tab = get_tab(browser)
     # DrissionPage's run_js wraps code in function(){...}.
     # For single expressions, prepend 'return' to get the value back.
     # For multi-statement code (contains ; or newlines), leave as-is.
@@ -402,7 +433,7 @@ def cmd_js(code):
 
 def cmd_wait(sel, timeout=10):
     browser, _ = get_browser()
-    tab = browser.latest_tab
+    tab = get_tab(browser)
     from DrissionPage.errors import ElementNotFoundError
     try:
         el = tab.ele(sel, timeout=float(timeout))
@@ -455,6 +486,111 @@ def cmd_tab(tab_id):
     print(json.dumps({"ok": False, "error": f"Tab {tab_id} not found"}))
     sys.exit(1)
 
+def cmd_newtab(args):
+    browser, _ = get_browser()
+    url = args[0] if args else None
+    t = browser.new_tab(url=url)
+    print(json.dumps({
+        "ok": True,
+        "action": "newtab",
+        "tab_id": t.tab_id,
+        "url": t.url,
+        "title": t.title,
+    }, ensure_ascii=False))
+
+def cmd_closetab(args):
+    browser, _ = get_browser()
+    tab_id = args[0] if args else browser.latest_tab.tab_id
+    for t in browser.get_tabs():
+        if t.tab_id == tab_id:
+            browser.close_tabs(tab_id)
+            print(json.dumps({"ok": True, "action": "closetab", "tab_id": tab_id}, ensure_ascii=False))
+            return
+    print(json.dumps({"ok": False, "error": f"Tab {tab_id} not found"}))
+    sys.exit(1)
+
+def cmd_frame(args):
+    if not args:
+        _usage()
+        return
+    target = args[0]
+
+    if target.lower() in ("main", "reset", "exit", "top"):
+        session = load_session()
+        session.pop("active_frame", None)
+        save_session(session)
+        print(json.dumps({"ok": True, "action": "frame", "frame": "main"}, ensure_ascii=False))
+        return
+
+    browser, _ = get_browser()
+    tab = browser.latest_tab
+    sel = target
+    if sel.isdigit():
+        loc = int(sel)
+    else:
+        if not any(sel.startswith(p) for p in ("css:", "tag:", "xpath:", "text:", "@")):
+            sel = f"css:{sel}"
+        loc = sel
+
+    try:
+        frame = tab.get_frame(loc)
+    except Exception as e:
+        print(json.dumps({
+            "error": f"Frame not found: '{target}'",
+            "detail": str(e),
+            "hint": "Use an iframe's CSS selector, an XPath, or its 0-based index among frames on the page.",
+        }))
+        sys.exit(1)
+        return
+
+    session = load_session()
+    session["active_frame"] = loc
+    save_session(session)
+    print(json.dumps({
+        "ok": True,
+        "action": "frame",
+        "frame": target,
+        "url": frame.url,
+    }, ensure_ascii=False))
+
+def cmd_upload(sel, path):
+    browser, _ = get_browser()
+    tab = get_tab(browser)
+    abspath = os.path.abspath(path)
+    if not os.path.exists(abspath):
+        print(json.dumps({"error": f"File not found: {abspath}"}))
+        sys.exit(1)
+        return
+    el = resolve_element(tab, sel)
+    el.input(abspath)
+    print(json.dumps({
+        "ok": True,
+        "action": "upload",
+        "selector": sel,
+        "file": abspath,
+    }, ensure_ascii=False))
+
+def cmd_select(sel, value):
+    browser, _ = get_browser()
+    tab = get_tab(browser)
+    el = resolve_element(tab, sel)
+    if not el.select:
+        print(json.dumps({"error": f"Element '{sel}' is not a <select>"}))
+        sys.exit(1)
+        return
+    if value.isdigit():
+        el.select.by_index(int(value))
+    else:
+        el.select.by_text(value)
+    chosen = el.select.selected_option
+    print(json.dumps({
+        "ok": True,
+        "action": "select",
+        "selector": sel,
+        "value": value,
+        "selected_text": chosen.text if chosen else None,
+    }, ensure_ascii=False))
+
 def cmd_scroll(px):
     browser, _ = get_browser()
     tab = browser.latest_tab
@@ -485,7 +621,7 @@ def cmd_refresh():
 def cmd_press(key):
     from DrissionPage.common import Keys
     browser, _ = get_browser()
-    tab = browser.latest_tab
+    tab = get_tab(browser)
     key_map = {
         "enter": "ENTER", "tab": "TAB", "escape": "ESCAPE", "esc": "ESCAPE",
         "backspace": "BACKSPACE", "delete": "DELETE", "space": "SPACE",
@@ -586,6 +722,11 @@ COMMANDS = {
     "cookies": lambda args: cmd_cookies(),
     "tabs": lambda args: cmd_tabs(),
     "tab": lambda args: cmd_tab(args[0]) if args else _usage(),
+    "newtab": lambda args: cmd_newtab(args),
+    "closetab": lambda args: cmd_closetab(args),
+    "frame": lambda args: cmd_frame(args),
+    "upload": lambda args: cmd_upload(args[0], " ".join(args[1:])) if len(args) >= 2 else _usage(),
+    "select": lambda args: cmd_select(args[0], " ".join(args[1:])) if len(args) >= 2 else _usage(),
     "scroll": lambda args: cmd_scroll(args[0]) if args else _usage(),
     "back": lambda args: cmd_back(),
     "forward": lambda args: cmd_forward(),

@@ -42,6 +42,12 @@ implementation.
   - `ref_map` (object) — `{"[eN]": "<xpath>"}`, written by `snap`.
   - `ref_url` (string) — the page URL `snap` was run against; used to
     invalidate `ref_map` after navigation.
+  - `active_frame` (string or int, optional) — set by `frame <sel>`,
+    cleared by `frame main`. When present, every command that calls
+    `get_tab()` (see §4) operates inside this iframe instead of the
+    top-level page, until explicitly cleared. This is process-independent
+    state, like `ref_map` — it persists across separate `drission.py`
+    invocations within the same session.
 - Every command that touches the browser calls `get_browser()`, which reads
   `debug_port` from the session file (default 9222 if absent/missing).
 - **Requirement:** a `[eN]` ref MUST NOT resolve successfully if
@@ -53,10 +59,29 @@ implementation.
 
 - `get_browser(port=None)`:
   - Resolves port: explicit arg > session file `debug_port` > `9222`.
-  - Calls `DrissionPage.Chromium(port)`.
-  - On success: persists `debug_port` to session, returns `(browser, port)`.
-  - On failure: prints structured error JSON (see §2) and `sys.exit(1)`.
+  - Calls `DrissionPage.Chromium(port)` (bare port, no options).
+  - **Retry on failure:** if the bare call raises, retries once with an
+    explicit `ChromiumOptions` configured as `set_local_port(port)`,
+    `set_browser_path(find_chrome())`, `existing_only()` (connect-only —
+    must never attempt to launch a new browser process here). This covers
+    browsers DrissionPage can't otherwise attach to because it can't
+    resolve a launchable path for them, even though the CDP endpoint
+    itself is reachable.
+  - On success (either attempt): persists `debug_port` to session, returns
+    `(browser, port)`.
+  - On failure of both attempts: prints structured error JSON (see §2),
+    using the **first** attempt's exception as `detail`, and `sys.exit(1)`.
     MUST NOT raise an uncaught traceback to stdout.
+- `get_tab(browser)`:
+  - Returns the tab subsequent element/page operations should act on.
+  - Reads `active_frame` from the session file (see §3, set by the `frame`
+    command). If present, resolves `browser.latest_tab.get_frame(active_frame)`
+    and returns that frame instead of the main tab.
+  - If frame resolution fails (frame no longer on the page), falls back
+    silently to the main tab — it does NOT clear `active_frame` from the
+    session, so a subsequent call may retry the same (possibly now-valid)
+    locator.
+  - If `active_frame` is absent, returns `browser.latest_tab` directly.
 - `find_chrome()` MUST resolve a usable browser executable path on all three
   target platforms:
   - **Windows:** known install paths under `Program Files` /
@@ -91,20 +116,25 @@ notable failure modes.
 | `launch` | — | `port, browser, url, title, hint` | See §4. |
 | `tabs` | — | `tabs: [{id, index, url, title}], count` | |
 | `tab` | `<tab_id>` | `tab_id, url, title` | `{"ok": false, "error": ...}` + `sys.exit(1)` if id not found. |
-| `goto` | `<url>` | `url, title` | |
+| `newtab` | `[url]` | `action, tab_id, url, title` | Opens and switches to a new tab; navigates it if `url` given. Always acts on the browser, not the active frame. |
+| `closetab` | `[tab_id]` | `action, tab_id` | Defaults to the current (`latest_tab`) tab id if omitted. `{"ok": false, "error": ...}` + `sys.exit(1)` if id not found. |
+| `frame` | `<sel\|idx>` or `main`/`reset`/`exit`/`top` | `action, frame, url` (enter) or `action, frame: "main"` (leave) | Sets/clears session `active_frame` (§3). `<sel>` without an explicit `css:`/`tag:`/`xpath:`/`text:`/`@` prefix is treated as CSS. A bare digit is treated as a 0-based frame index. Resolution failure → error + `sys.exit(1)`, `active_frame` left unchanged. |
+| `goto` | `<url>` | `url, title` | Always navigates the main tab — never affected by `active_frame`. |
 | `back` / `forward` / `refresh` | — | `url, title` | 0.5s settle delay after action. |
 | `url` / `title` | — | `url, title` resp. `title` | |
-| `snap` | `[--full]` | plain text block (not JSON) | Writes `ref_map`/`ref_url` to session as a side effect. Default selector: interactive elements only (`a, button, input, select, textarea, form, h1-h6, iframe, [onclick], [role=button\|link\|tab], summary, details`), filtered to `is_displayed`. `--full`: all elements under `body`, unfiltered. |
-| `text` | `[sel]` | plain text | No selector = `body` text, truncated to 5000 chars. |
-| `html` | `[sel]` | plain text | No selector = full page HTML, truncated to 10000 chars. |
-| `shot` | `[sel]` | `file` (absolute path) | Writes `drission_screenshot.png` next to `drission.py` (i.e. `scripts/`), independent of the caller's CWD. |
-| `click` | `<sel>` | `action, selector, url, title` | Falls back to `click(by_js=True)` on any exception from the normal click. 0.5s settle delay. |
-| `type` / `input` | `<sel> <text...>` | `action, selector, text` (truncated 100 chars) | Clears field before typing. Remaining args joined with spaces as text. |
-| `press` / `key` | `<key>` | `key` | Maps common key names (see §6). |
-| `scroll` | `<px>` | `action, pixels` | Positive = down, negative = up. |
-| `wait` | `<sel> [timeout=10]` | `found, text` on success; `found: false, error` + `sys.exit(1)` on timeout | |
-| `js` | `<code...>` | `result` (str, truncated 5000 chars) | See §7 for return-value semantics. |
-| `cookies` | — | `url, cookies, count` | |
+| `snap` | `[--full]` | plain text block (not JSON) | **Frame-aware** (`get_tab()`). Writes `ref_map`/`ref_url` to session as a side effect. Default selector: interactive elements only (`a, button, input, select, textarea, form, h1-h6, iframe, [onclick], [role=button\|link\|tab], summary, details`), filtered to `is_displayed`. `--full`: all elements under `body`, unfiltered. |
+| `text` | `[sel]` | plain text | **Frame-aware.** No selector = `body` text, truncated to 5000 chars. |
+| `html` | `[sel]` | plain text | **Frame-aware.** No selector = full page HTML, truncated to 10000 chars. |
+| `shot` | `[sel]` | `file` (absolute path) | Always acts on the main tab (screenshots aren't frame-scoped). Writes `drission_screenshot.png` next to `drission.py` (i.e. `scripts/`), independent of the caller's CWD. |
+| `click` | `<sel>` | `action, selector, url, title` | **Frame-aware.** Falls back to `click(by_js=True)` on any exception from the normal click. 0.5s settle delay. |
+| `type` / `input` | `<sel> <text...>` | `action, selector, text` (truncated 100 chars) | **Frame-aware.** Clears field before typing. Remaining args joined with spaces as text. |
+| `select` | `<sel> <text\|idx>` | `action, selector, value, selected_text` | **Frame-aware.** Chooses a `<select>` option: a value consisting only of digits is treated as a 0-based index (`by_index`), anything else as visible option text (`by_text`). `{"error": ...}` + `sys.exit(1)` if the resolved element isn't a `<select>`. |
+| `upload` | `<sel> <path>` | `action, selector, file` (absolute path) | **Frame-aware.** Resolves `path` to an absolute path and requires it to exist on disk before calling `el.input(path)` on the file `<input>` — `{"error": "File not found: ..."}` + `sys.exit(1)` otherwise. |
+| `press` / `key` | `<key>` | `key` | **Frame-aware.** Maps common key names (see §6). |
+| `scroll` | `<px>` | `action, pixels` | Always acts on the main tab. Positive = down, negative = up. |
+| `wait` | `<sel> [timeout=10]` | `found, text` on success; `found: false, error` + `sys.exit(1)` on timeout | **Frame-aware.** |
+| `js` | `<code...>` | `result` (str, truncated 5000 chars) | **Frame-aware.** See §7 for return-value semantics. |
+| `cookies` | — | `url, cookies, count` | Always acts on the main tab. |
 
 ## 6. Key mapping (`press`)
 
